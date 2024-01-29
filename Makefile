@@ -3,12 +3,11 @@ ROOTCFLAGS = `root-config --cflags`
 ROOTLIBS   = `root-config --libs`
 
 CXXFLAGS += -I. -Wall -fPIC
-CFLAGS += -Wall -fPIC
 SHAREDFLAGS =  -shared -Wl
 
 %.o : %.c
 	$(RM) $@
-	$(CC) -c $(CFLAGS) -o $@ $<
+	$(CC) -c $(CXXFLAGS) -o $@ $<
 	
 %.o : %.cc
 	$(RM) $@
@@ -20,7 +19,7 @@ OBJS    = EarthDensity.o BargerPropagator.o mosc.o mosc3.o FullSMEPropagator.o \
           $(WRAPPERS)
 
 LIBBASE   = ThreeProb
-VER       = 3.20
+VER       = 3.10
 TAG       = 
 LIBALIAS  = $(LIBBASE)$(TAG)
 LIBNAME   = $(LIBALIAS)_$(VER)
@@ -30,24 +29,23 @@ lib3ps    = lib$(LIBNAME).so
 LINK      = lib$(LIBBASE).so
 
 
-targets = $(lib3p) probRoot probLinear probAnalytic Prob3plusplusConfig.cmake Prob3plusplusConfigVersion.cmake
+targets = $(lib3p) probRoot probLinear probAnalytic
+
 
 $(lib3p) : $(OBJS) 
 	$(RM) $@
-	ar clq $@ $(OBJS)
+	ar cq $@ $(OBJS)
 	ranlib $@
 
 
 $(lib3ps) : $(OBJS)
-	$(CXX) -shared -o $@ $(OBJS) 
-	-$(RM) $(LINK)
+	$(RM) $@
+	$(CXX) $(SHAREDFLAGS)$@ -o $@ $(OBJS) 
+	$(RM) $(LINK)
 	ln -s $(lib3ps) $(LINK)
 
-shared : $(lib3ps)
-	
-
-%.cmake: %.cmake.in
-	cat $< | sed "s|__Prob3plusplus_VERSION__|$(VER)|g" > $@
+shared :
+	gcc -shared -Wl,-soname,lib${LIBNAME}.so -o lib${LIBNAME}.so *.o
 
 probRoot: probRoot.o $(lib3p) 
 	$(RM) $@
@@ -69,6 +67,14 @@ probLinear: probLinear.o $(lib3p)
 probLinear.o: 
 	$(CXX) -o probLinear.o $(ROOTCFLAGS) $(CXXFLAGS) -c probLinear.cc
 
+solar: solar.o $(lib3p) 
+	$(RM) $@
+	$(CXX) -o $@ $(CXXFLAGS) -L. $^ $(ROOTLIBS)
+
+
+.PHONY: solar.o
+solar.o: 
+	$(CXX) -o solar.o $(ROOTCFLAGS) $(CXXFLAGS) -c solar.cc
 
 probAnalytic: probAnalytic.o $(lib3p) 
 	$(RM) $@
