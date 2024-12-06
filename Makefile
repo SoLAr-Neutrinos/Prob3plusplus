@@ -107,3 +107,21 @@ clean:
 emptyrule:: $(lib3p)
 
 	
+minimize: minimize.o $(lib3p) 
+	$(RM) $@
+	$(CXX) -o $@ $(CXXFLAGS) -L. $^ $(ROOTLIBS)
+
+
+.PHONY: minimize.o
+minimize.o: 
+	$(CXX) -o minimize.o $(ROOTCFLAGS) $(CXXFLAGS) -c minimize.cc
+	
+	
+model: model.o $(lib3p) 
+	$(RM) $@
+	$(CXX) -o $@ $(CXXFLAGS) -L. $^ $(ROOTLIBS)
+
+
+.PHONY: model.o
+model.o: 
+	$(CXX) -o model.o $(ROOTCFLAGS) $(CXXFLAGS) -c model.cc

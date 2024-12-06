@@ -126,18 +126,21 @@ int main(int argc, char *argv[])
     double ssth13 = 0.021;
     double dmsq12 = 7.4e-5;
     double exposure = 6e5;
+    TString reaction = "";
     TString process = "";
 
     if (argc > 2)
-        ssth12 = (double)atof(argv[2]);
+        reaction = argv[2];
     if (argc > 3)
-        ssth13 = (double)atof(argv[3]);
+        process = argv[3];
     if (argc > 4)
-        dmsq12 = (double)atof(argv[4]);
+        ssth12 = (double)atof(argv[4]);
     if (argc > 5)
-        exposure = (double)atof(argv[5]);
+        ssth13 = (double)atof(argv[5]);
     if (argc > 6)
-        process = argv[6];
+        dmsq12 = (double)atof(argv[6]);
+    if (argc > 7)
+        exposure = (double)atof(argv[7]);
 
     // Open test histogram file
     const char *filename = argv[1];
@@ -190,6 +193,26 @@ int main(int argc, char *argv[])
             return 1;
         }
         spectrum->Scale(1.0 / spectrum->Integral());
+    }
+    // ----------------------------------------------------------
+
+    // Retrieve the LAr cross-section (TGraoh)
+    TGraph *xsec = nullptr;
+    if (reaction != "")
+    {
+        TFile *xsecFile = TFile::Open("xsec.root");
+        if (!xsecFile || xsecFile->IsZombie())
+        {
+            std::cerr << "Error: Cannot open xsec.root" << std::endl;
+            return 1;
+        }
+        xsec = dynamic_cast<TGraph *>(xsecFile->Get(reaction));
+        if (!xsec)
+        {
+            std::cerr << "Error: Cross-section Graph not found in file." << std::endl;
+            return 1;
+        }
+        xsec->Scale(1.0 / xsec->Integral());
     }
     // ----------------------------------------------------------
 
@@ -271,10 +294,18 @@ int main(int argc, char *argv[])
     // Save the name of the file in a string with dm2 and sin12 as floats in scientific notation
     TString FilePath = "./models/";
     TString FileName = getBaseFileName(filename) + "_dm2_" + TString::Format("%.3e", dm2) + "_sin13_" + TString::Format("%.3e", ssth13) + "_sin12_" + TString::Format("%.3e", ssth12);
+    if (process != "")
+    {
+        FileName += "_" + process;
+    }
+    if (reaction != "")
+    {
+        FileName += "_" + reaction;
+    }
 
     TH2F *hsurv = new TH2F("hsurv", "P_{#nu_{e}#rightarrow#nu_{e}}",
                            NBinsEnergy, EnergyEdge, NBinsNadir, NadirEdge);
-    TH2F *hsurvnadir = new TH2F("hsurv_nadir", "P_{#nu_{e}#rightarrow#nu_{e}}",
+    TH2F *hsurvSolar = new TH2F("hsurvSolar", "P_{#nu_{e}#rightarrow#nu_{e}}",
                                 NBinsEnergy, EnergyEdge, NBinsNadir, NadirEdge);
 
     for (int i = 1; i <= hsurv->GetNbinsX(); i++)
@@ -301,26 +332,31 @@ int main(int argc, char *argv[])
 
             double nadirEval = interpolateValueTH1F(n, nadirHist);
 
-            double modelSurv = exposure * surv * nadirEval;
+            double modelSurv = surv * nadirEval;
 
             if (spectrum != nullptr)
             {
                 modelSurv *= spectrum->Eval(E);
             }
+            if (xsec != nullptr)
+            {
+                modelSurv *= xsec->Eval(E);
+            }
 
             hsurv->Fill(E, n, surv);
-            hsurvnadir->Fill(E, n, modelSurv);
-
+            hsurvSolar->Fill(E, n, modelSurv);
             // std::cout << "E = " << E << ", n = " << n << ", Surv = " << surv << std::endl;
         }
     }
 
-    TH2F *smeared = applySmearingMatrix(hsurvnadir, smear);
+    hsurvSolar->Scale(exposure / hsurvSolar->Integral());
+
+    TH2F *smeared = applySmearingMatrix(hsurvSolar, smear);
 
     TFile *f = new TFile(FilePath + FileName + ".root", "RECREATE");
     smeared->Write();
     hsurv->Write();
-    hsurvnadir->Write();
+    hsurvSolar->Write();
     f->Close();
     // Make a colorful print to the terminal including the name of the file
     std::cout << "\033[1;32m" << "Saved to: " << FilePath << "\nFile: " << FileName << ".root" << "\033[0m" << "\n\n";
