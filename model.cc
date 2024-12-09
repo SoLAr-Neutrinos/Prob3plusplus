@@ -53,57 +53,64 @@ double interpolateValueTH1F(double n, TH1F *hist)
 
 TH2F *applySmearingMatrix(TH2F *inputHistogram, TH2F *smearingMatrix)
 {
-    // Check if inputs are valid
+    // Validate inputs
     if (!inputHistogram || !smearingMatrix)
     {
         printf("Error: Input histogram or smearing matrix is null.\n");
         return nullptr;
     }
 
+    // Check compatibility between input histogram and smearing matrix
+    if (inputHistogram->GetNbinsX() != smearingMatrix->GetNbinsX())
+    {
+        printf("Error: Input histogram x-axis bins do not match smearing matrix rows.\n");
+        return nullptr;
+    }
+
     // Prepare the output histogram H'(x', y)
     TString outputName = TString(inputHistogram->GetName()) + "_smeared";
     TH2F *smearedHistogram = new TH2F(outputName, "Smeared Histogram",
-                                      smearingMatrix->GetNbinsX(),
-                                      smearingMatrix->GetXaxis()->GetXmin(),
-                                      smearingMatrix->GetXaxis()->GetXmax(),
-                                      inputHistogram->GetNbinsY(),
+                                      smearingMatrix->GetNbinsY(), // Smeared energy bins (x')
+                                      smearingMatrix->GetYaxis()->GetXmin(),
+                                      smearingMatrix->GetYaxis()->GetXmax(),
+                                      inputHistogram->GetNbinsY(), // Same y-axis as input
                                       inputHistogram->GetYaxis()->GetXmin(),
                                       inputHistogram->GetYaxis()->GetXmax());
 
-    // Loop over y-bins of the input histogram
+    // Perform the matrix multiplication for each y-bin
     for (int yBin = 1; yBin <= inputHistogram->GetNbinsY(); ++yBin)
     {
-        // Get the x-slice (1D projection along x for the current y-bin)
-        TH1D *slice_x = inputHistogram->ProjectionX("slice_x", yBin, yBin);
+        // Extract the input slice (true energy) for the current y-bin
+        TH1D *sliceTrue = inputHistogram->ProjectionX("sliceTrue", yBin, yBin);
 
-        // Create an empty histogram for the smeared x' slice
-        TH1D slice_xprime("slice_xprime", "Smeared X'",
-                          smearingMatrix->GetNbinsX(),
-                          smearingMatrix->GetXaxis()->GetXmin(),
-                          smearingMatrix->GetXaxis()->GetXmax());
+        // Create a temporary slice for the smeared (output) x-axis
+        TH1D sliceSmeared("sliceSmeared", "Smeared X-axis",
+                          smearingMatrix->GetNbinsY(),
+                          smearingMatrix->GetYaxis()->GetXmin(),
+                          smearingMatrix->GetYaxis()->GetXmax());
 
-        // Apply the smearing matrix to the x-slice
-        for (int xprimeBin = 1; xprimeBin <= smearingMatrix->GetNbinsX(); ++xprimeBin)
+        // Perform the matrix multiplication: sum over true energy bins
+        for (int xPrimeBin = 1; xPrimeBin <= smearingMatrix->GetNbinsY(); ++xPrimeBin)
         {
-            double xprimeValue = 0;
-            for (int xBin = 1; xBin <= smearingMatrix->GetNbinsY(); ++xBin)
+            double smearedValue = 0.0;
+            for (int xBin = 1; xBin <= smearingMatrix->GetNbinsX(); ++xBin)
             {
-                double smearingValue = smearingMatrix->GetBinContent(xprimeBin, xBin);
-                double inputValue = slice_x->GetBinContent(xBin);
-                xprimeValue += smearingValue * inputValue;
+                double smearingFactor = smearingMatrix->GetBinContent(xBin, xPrimeBin); // Note the transposed access
+                double inputValue = sliceTrue->GetBinContent(xBin);
+                smearedValue += smearingFactor * inputValue;
             }
-            slice_xprime.SetBinContent(xprimeBin, xprimeValue);
+            sliceSmeared.SetBinContent(xPrimeBin, smearedValue);
         }
 
-        // Fill the output histogram H'(x', y) with the smeared slice
-        for (int xprimeBin = 1; xprimeBin <= slice_xprime.GetNbinsX(); ++xprimeBin)
+        // Fill the smeared values back into the output histogram
+        for (int xPrimeBin = 1; xPrimeBin <= sliceSmeared.GetNbinsX(); ++xPrimeBin)
         {
-            double value = slice_xprime.GetBinContent(xprimeBin);
-            smearedHistogram->SetBinContent(xprimeBin, yBin, value);
+            double value = sliceSmeared.GetBinContent(xPrimeBin);
+            smearedHistogram->SetBinContent(xPrimeBin, yBin, value);
         }
 
         // Cleanup
-        delete slice_x;
+        delete sliceTrue;
     }
 
     return smearedHistogram;
@@ -158,6 +165,7 @@ int main(int argc, char *argv[])
         inputFile->Close();
         return 1;
     }
+    testHist->Scale(exposure / testHist->Integral());
     // ----------------------------------------------------------
 
     // Retrieve the nadir probability distribution (TH1F)
@@ -305,7 +313,7 @@ int main(int argc, char *argv[])
 
     TH2F *hsurv = new TH2F("hsurv", "P_{#nu_{e}#rightarrow#nu_{e}}",
                            NBinsEnergy, EnergyEdge, NBinsNadir, NadirEdge);
-    TH2F *hsurvSolar = new TH2F("hsurvSolar", "P_{#nu_{e}#rightarrow#nu_{e}}",
+    TH2F *hsurvSolar = new TH2F("hsurvSolar", "Solar P_{#nu_{e}#rightarrow#nu_{e}}",
                                 NBinsEnergy, EnergyEdge, NBinsNadir, NadirEdge);
 
     for (int i = 1; i <= hsurv->GetNbinsX(); i++)
