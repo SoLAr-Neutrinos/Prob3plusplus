@@ -135,6 +135,7 @@ int main(int argc, char *argv[])
     double exposure = 6e5;
     TString reaction = "";
     TString process = "";
+    TString qvar = "Ecol";
 
     if (argc > 2)
         reaction = argv[2];
@@ -148,6 +149,8 @@ int main(int argc, char *argv[])
         dmsq12 = (double)atof(argv[6]);
     if (argc > 7)
         exposure = (double)atof(argv[7]);
+    if (argc > 8)
+        qvar = argv[8];
 
     // Open test histogram file
     const char *filename = argv[1];
@@ -158,10 +161,10 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    TH2F *testHist = (TH2F *)inputFile->Get("hist");
+    TH2F *testHist = (TH2F *)inputFile->Get(qvar);
     if (!testHist)
     {
-        std::cerr << "Error: Histogram 'hist' not found in file " << filename << std::endl;
+        std::cerr << "Error: Histogram '" << qvar << "' not found in file " << filename << std::endl;
         inputFile->Close();
         return 1;
     }
@@ -231,10 +234,10 @@ int main(int argc, char *argv[])
         std::cerr << "Error: Cannot open smear.root" << std::endl;
         return 1;
     }
-    TH2F *smear = dynamic_cast<TH2F *>(smearFile->Get("smear"));
+    TH2F *smear = dynamic_cast<TH2F *>(smearFile->Get("E->" + qvar));
     if (!smear)
     {
-        std::cerr << "Error: Smearing matrix not found in file." << std::endl;
+        std::cerr << "Error: " << "E->" + qvar << " Smearing matrix not found in file." << std::endl;
         return 1;
     }
     smear->Scale(1.0 / smear->Integral());
@@ -301,7 +304,7 @@ int main(int argc, char *argv[])
 
     // Save the name of the file in a string with dm2 and sin12 as floats in scientific notation
     TString FilePath = "./models/";
-    TString FileName = getBaseFileName(filename) + "_dm2_" + TString::Format("%.3e", dm2) + "_sin13_" + TString::Format("%.3e", ssth13) + "_sin12_" + TString::Format("%.3e", ssth12);
+    TString FileName = getBaseFileName(filename) + "_" + qvar + "_dm2_" + TString::Format("%.3e", dm2) + "_sin13_" + TString::Format("%.3e", ssth13) + "_sin12_" + TString::Format("%.3e", ssth12);
     if (process != "")
     {
         FileName += "_" + process;
