@@ -263,7 +263,16 @@ double ChiSquared(const double *params)
             double observed = testHist->GetBinContent(i, j);
             double expected = modelHist->GetBinContent(i, j);
 
-            if (observed > 0)
+            // Replace NaN values with 0
+            if (std::isnan(observed))
+            {
+                observed = 0.0;
+            }
+            if (std::isnan(expected))
+            {
+                expected = 0.0;
+            }
+            if (expected > 0)
             {
                 chi2 += pow(observed - expected, 2) / expected;
             }
@@ -286,13 +295,21 @@ std::vector<double> minimize()
     Minimizer->SetFunction(Func);
 
     // Initial values and limits
-    Minimizer->SetVariable(0, "Theta12", 0, 0.005);
-    Minimizer->SetVariable(1, "Theta13", 0, 0.005);
+    Minimizer->SetVariable(0, "Theta12", 0.0, 0.005);
+    Minimizer->SetVariable(1, "Theta13", 0.0, 0.005);
     Minimizer->SetVariable(2, "m2", 3.5e-5, 1e-6);
-    Minimizer->SetVariableLimits(1.0, 1.0, 9.5e-5);
+    Minimizer->SetVariableLimits(0, 0, 1);
+    Minimizer->SetVariableLimits(1, 0, 1);
+    Minimizer->SetVariableLimits(2, 3.5e-5, 9.5e-5);
 
     // Perform minimization
     Minimizer->Minimize();
+
+    for (int i = 0; i < 3; i++)
+    {
+        for (int j = 0; j < 3; j++)
+            std::cout << "Covariance (" << i << "," << j << ") = " << Minimizer->CovMatrix(i, j) << endl;
+    }
 
     // Retrieve results
     double theta12_opt = Minimizer->X()[0];
