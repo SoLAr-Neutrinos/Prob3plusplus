@@ -26,7 +26,7 @@ double dmsq12 = 7.4e-5;
 double exposure = 6e5;
 TString reaction = "";
 TString process = "";
-TString qvar = "Ecol";
+TString qvar = "E";
 
 int NBinsEnergy = 0;
 int NBinsNadir = 0;
@@ -90,13 +90,6 @@ TH2F *applySmearingMatrix(TH2F *inputHistogram, TH2F *smearingMatrix)
         return nullptr;
     }
 
-    // Check compatibility between input histogram and smearing matrix
-    if (inputHistogram->GetNbinsX() != smearingMatrix->GetNbinsX())
-    {
-        printf("Error: Input histogram x-axis bins do not match smearing matrix rows.\n");
-        return nullptr;
-    }
-
     // Prepare the output histogram H'(x', y)
     TString outputName = TString(inputHistogram->GetName()) + "_smeared";
     TH2F *smearedHistogram = new TH2F(outputName, "Smeared Histogram",
@@ -123,9 +116,16 @@ TH2F *applySmearingMatrix(TH2F *inputHistogram, TH2F *smearingMatrix)
         for (int xPrimeBin = 1; xPrimeBin <= smearingMatrix->GetNbinsY(); ++xPrimeBin)
         {
             double smearedValue = 0.0;
-            for (int xBin = 1; xBin <= smearingMatrix->GetNbinsX(); ++xBin)
+            for (int xBin = 1; xBin <= sliceTrue->GetNbinsX(); ++xBin)
             {
-                double smearingFactor = smearingMatrix->GetBinContent(xBin, xPrimeBin); // Note the transposed access
+                double inputBinCenter = sliceTrue->GetXaxis()->GetBinCenter(xBin);
+                int smearingBin = smearingMatrix->GetXaxis()->FindBin(inputBinCenter);
+                if (smearingBin < 1 || smearingBin > smearingMatrix->GetNbinsX())
+                    continue; // Skip if the bin is out of bounds
+                if (smearingMatrix->GetXaxis()->GetBinCenter(smearingBin) < 0)
+                    continue;
+
+                double smearingFactor = smearingMatrix->GetBinContent(smearingBin, xPrimeBin); // Note the transposed access
                 double inputValue = sliceTrue->GetBinContent(xBin);
                 smearedValue += smearingFactor * inputValue;
             }
@@ -142,8 +142,6 @@ TH2F *applySmearingMatrix(TH2F *inputHistogram, TH2F *smearingMatrix)
         // Cleanup
         delete sliceTrue;
     }
-
-    smearedHistogram->Scale(inputHistogram->Integral() / smearedHistogram->Integral());
 
     return smearedHistogram;
 }
@@ -185,8 +183,8 @@ std::vector<TH2F *> calculateSurvivalHistograms(double Theta12, double Theta13, 
 
     TH2F *hsurv = new TH2F("hsurv", "P_{#nu_{e}#rightarrow#nu_{e}}",
                            NBinsEnergy, EnergyEdge, NBinsNadir, NadirEdge);
-    TH2F *hsurvSolar = new TH2F("hsurvSolar", "Solar P_{#nu_{e}#rightarrow#nu_{e}}",
-                                NBinsEnergy, EnergyEdge, NBinsNadir, NadirEdge);
+    TH2F *hsolar = new TH2F("hsolar", "Solar P_{#nu_{e}#rightarrow#nu_{e}}",
+                            NBinsEnergy, EnergyEdge, NBinsNadir, NadirEdge);
 
     BargerPropagator *myNu = new BargerPropagator();
     // flavor is default, but produced as mass states in sun
@@ -229,15 +227,73 @@ std::vector<TH2F *> calculateSurvivalHistograms(double Theta12, double Theta13, 
             {
                 modelSurv *= xsec->Eval(E);
             }
-            hsurvSolar->Fill(E, n, modelSurv);
+            hsolar->Fill(E, n, modelSurv);
         }
     }
 
-    hsurvSolar->Scale(exposure / hsurvSolar->Integral());
+    // hsolar->Scale(exposure / hsolar->Integral());
 
-    TH2F *smeared = applySmearingMatrix(hsurvSolar, smear);
+    TH2F *smeared = applySmearingMatrix(hsolar, smear);
 
-    return {hsurv, hsurvSolar, smeared};
+    smeared->Scale(exposure / smeared->Integral());
+
+    return {hsurv, hsolar, smeared};
+}
+
+TH2F *histChi2(TH2F *hist1, TH2F *hist2)
+{
+    // Determine the common binning range and step size
+    double xMin = std::min(hist1->GetXaxis()->GetXmin(), hist2->GetXaxis()->GetXmin());
+    double xMax = std::max(hist1->GetXaxis()->GetXmax(), hist2->GetXaxis()->GetXmax());
+    double yMin = std::min(hist1->GetYaxis()->GetXmin(), hist2->GetYaxis()->GetXmin());
+    double yMax = std::max(hist1->GetYaxis()->GetXmax(), hist2->GetYaxis()->GetXmax());
+
+    int nBinsX = max(hist1->GetNbinsX(), hist2->GetNbinsX());
+    int nBinsY = max(hist1->GetNbinsY(), hist2->GetNbinsY());
+
+    double xStep = (xMax - xMin) / nBinsX;
+    double yStep = (yMax - yMin) / nBinsY;
+
+    // Create a new histogram with the common binning
+    TH2F *result = new TH2F("Minimum chi2", "Chi2", nBinsX, xMin, xMax, nBinsY, yMin, yMax);
+
+    // Subtract the bin contents of the two histograms
+    for (int i = 1; i <= nBinsX; ++i)
+    {
+        for (int j = 1; j <= nBinsY; ++j)
+        {
+            double xCenter = xMin + (i - 0.5) * xStep;
+            double yCenter = yMin + (j - 0.5) * yStep;
+
+            int bin1 = hist1->FindBin(xCenter, yCenter);
+            int bin2 = hist2->FindBin(xCenter, yCenter);
+
+            double content1 = (hist1->GetXaxis()->GetBinLowEdge(i) >= hist1->GetXaxis()->GetXmin() &&
+                               hist1->GetXaxis()->GetBinUpEdge(i) <= hist1->GetXaxis()->GetXmax() &&
+                               hist1->GetYaxis()->GetBinLowEdge(j) >= hist1->GetYaxis()->GetXmin() &&
+                               hist1->GetYaxis()->GetBinUpEdge(j) <= hist1->GetYaxis()->GetXmax())
+                                  ? hist1->GetBinContent(bin1)
+                                  : 0.0;
+
+            double content2 = (hist2->GetXaxis()->GetBinLowEdge(i) >= hist2->GetXaxis()->GetXmin() &&
+                               hist2->GetXaxis()->GetBinUpEdge(i) <= hist2->GetXaxis()->GetXmax() &&
+                               hist2->GetYaxis()->GetBinLowEdge(j) >= hist2->GetYaxis()->GetXmin() &&
+                               hist2->GetYaxis()->GetBinUpEdge(j) <= hist2->GetYaxis()->GetXmax())
+                                  ? hist2->GetBinContent(bin2)
+                                  : 0.0;
+            if (content2 != 0)
+            {
+                result->SetBinContent(i, j, pow((content1 - content2), 2) / content2);
+            }
+            else
+            {
+                // Handle the case where content2 is zero, e.g., set the bin content to zero
+                result->SetBinContent(i, j, 0);
+            }
+        }
+    }
+
+    return result;
 }
 
 double ChiSquared(const double *params)
@@ -255,29 +311,32 @@ double ChiSquared(const double *params)
     std::vector<TH2F *> histograms = calculateSurvivalHistograms(theta12, theta13, m2);
     TH2F *modelHist = histograms[2];
 
-    double chi2 = 0.0;
-    for (int i = 1; i <= testHist->GetNbinsX(); i++)
-    {
-        for (int j = 1; j <= testHist->GetNbinsY(); j++)
-        {
-            double observed = testHist->GetBinContent(i, j);
-            double expected = modelHist->GetBinContent(i, j);
+    TH2F *resultHist = histChi2(testHist, modelHist);
+    double chi2 = resultHist->Integral();
 
-            // Replace NaN values with 0
-            if (std::isnan(observed))
-            {
-                observed = 0.0;
-            }
-            if (std::isnan(expected))
-            {
-                expected = 0.0;
-            }
-            if (expected > 0)
-            {
-                chi2 += pow(observed - expected, 2) / expected;
-            }
-        }
-    }
+    // double chi2 = 0.0;
+    // for (int i = 1; i <= testHist->GetNbinsX(); i++)
+    // {
+    //     for (int j = 1; j <= testHist->GetNbinsY(); j++)
+    //     {
+    //         double observed = testHist->GetBinContent(i, j);
+    //         double expected = modelHist->GetBinContent(i, j);
+
+    //         // Replace NaN values with 0
+    //         if (std::isnan(observed))
+    //         {
+    //             observed = 0.0;
+    //         }
+    //         if (std::isnan(expected))
+    //         {
+    //             expected = 0.0;
+    //         }
+    //         if (expected > 0)
+    //         {
+    //             chi2 += pow(observed - expected, 2) / expected;
+    //         }
+    //     }
+    // }
     return chi2;
 }
 
@@ -290,14 +349,14 @@ std::vector<double> minimize()
     std::unique_ptr<ROOT::Math::Minimizer> Minimizer(
         ROOT::Math::Factory::CreateMinimizer("Minuit2", "Minimize"));
 
-    Minimizer->SetMaxFunctionCalls(1e6);
-    Minimizer->SetTolerance(0.001);
+    Minimizer->SetMaxFunctionCalls(1e9);
+    Minimizer->SetTolerance(1e-4);
     Minimizer->SetFunction(Func);
 
     // Initial values and limits
-    Minimizer->SetVariable(0, "Theta12", 0.0, 0.005);
-    Minimizer->SetVariable(1, "Theta13", 0.0, 0.005);
-    Minimizer->SetVariable(2, "m2", 3.5e-5, 1e-6);
+    Minimizer->SetVariable(0, "Theta12", ssth12, 0.001);
+    Minimizer->SetVariable(1, "Theta13", ssth13, 0.001);
+    Minimizer->SetVariable(2, "m2", dmsq12, 1e-7);
     Minimizer->SetVariableLimits(0, 0, 1);
     Minimizer->SetVariableLimits(1, 0, 1);
     Minimizer->SetVariableLimits(2, 3.5e-5, 9.5e-5);
@@ -305,11 +364,16 @@ std::vector<double> minimize()
     // Perform minimization
     Minimizer->Minimize();
 
-    for (int i = 0; i < 3; i++)
-    {
-        for (int j = 0; j < 3; j++)
-            std::cout << "Covariance (" << i << "," << j << ") = " << Minimizer->CovMatrix(i, j) << endl;
-    }
+    // std::cout << Minimizer->CovMatrixStatus() << std::endl;
+
+    // for (int i = 0; i < 3; i++)
+    // {
+    //     for (int j = i; j < 3; j++)
+    //     {
+    //         std::cout << "Covariance (" << i << "," << j << ") = " << Minimizer->CovMatrix(i, j) << std::endl;
+    //         std::cout << "Correlation (" << i << "," << j << ") = " << Minimizer->Correlation(i, j) << std::endl;
+    //     }
+    // }
 
     // Retrieve results
     double theta12_opt = Minimizer->X()[0];
@@ -324,23 +388,85 @@ std::vector<double> minimize()
     // std::cout << "Optimized m2: " << m2_opt << std::endl;
     // std::cout << "Minimum Chi-Squared: " << minChi2 << std::endl;
 
+    // Open a ROOT file to store contour plots
+    TFile *rootFile = new TFile("models/minimizer_plots.root", "RECREATE");
+
+    // Create TH2F histograms for covariance and correlation matrices
+    TH2F *covMatrixHist = new TH2F("CovarianceMatrix", "Covariance Matrix", 3, 0, 3, 3, 0, 3);
+    TH2F *corrMatrixHist = new TH2F("CorrelationMatrix", "Correlation Matrix", 3, 0, 3, 3, 0, 3);
+
+    // Fill the histograms with values from the minimizer
+    for (int i = 0; i < 3; i++)
+    {
+        for (int j = 0; j < 3; j++)
+        {
+            covMatrixHist->SetBinContent(i + 1, j + 1, Minimizer->CovMatrix(i, j));
+            corrMatrixHist->SetBinContent(i + 1, j + 1, Minimizer->Correlation(i, j));
+        }
+    }
+
+    // Write the histograms to the file
+    covMatrixHist->Write();
+    corrMatrixHist->Write();
+
+    // // Generate contour plots
+    // unsigned int npointsTheta12Theta13 = 40;
+    // unsigned int npointsTheta12M2 = 40;
+    // unsigned int npointsTheta13M2 = 40;
+
+    // // Contour for Theta12 and Theta13
+    // std::cout << "Contour for Theta12 and Theta13" << std::endl;
+    // std::vector<double> xiTheta12Theta13(npointsTheta12Theta13), xjTheta12Theta13(npointsTheta12Theta13);
+    // if (Minimizer->Contour(0, 1, npointsTheta12Theta13, xiTheta12Theta13.data(), xjTheta12Theta13.data()))
+    // {
+    //     auto graph = new TGraph(npointsTheta12Theta13, xiTheta12Theta13.data(), xjTheta12Theta13.data());
+    //     graph->SetName("Contour_Theta12_Theta13");
+    //     graph->SetTitle("Contour Plot: Theta12 vs Theta13;Theta12;Theta13");
+    //     graph->Write();
+    // }
+
+    // // Contour for Theta12 and m2
+    // // std::cout << "Contour for Theta12 and m2" << std::endl;
+    // std::vector<double> xiTheta12M2(npointsTheta12M2), xjTheta12M2(npointsTheta12M2);
+    // if (Minimizer->Contour(0, 2, npointsTheta12M2, xiTheta12M2.data(), xjTheta12M2.data()))
+    // {
+    //     auto graph = new TGraph(npointsTheta12M2, xiTheta12M2.data(), xjTheta12M2.data());
+    //     graph->SetName("Contour_Theta12_m2");
+    //     graph->SetTitle("Contour Plot: Theta12 vs m2;Theta12;m2");
+    //     graph->Write();
+    // }
+
+    // // Contour for Theta13 and m2
+    // // std::cout << "Contour for Theta13 and m2" << std::endl;
+    // std::vector<double> xiTheta13M2(npointsTheta13M2), xjTheta13M2(npointsTheta13M2);
+    // if (Minimizer->Contour(1, 2, npointsTheta13M2, xiTheta13M2.data(), xjTheta13M2.data()))
+    // {
+    //     auto graph = new TGraph(npointsTheta13M2, xiTheta13M2.data(), xjTheta13M2.data());
+    //     graph->SetName("Contour_Theta13_m2");
+    //     graph->SetTitle("Contour Plot: Theta13 vs m2;Theta13;m2");
+    //     graph->Write();
+    // }
+
+    // Close the ROOT file
+    rootFile->Close();
+
     return {theta12_opt, theta13_opt, m2_opt, minChi2};
 }
 
 int main(int argc, char *argv[])
 {
     if (argc > 2)
-        reaction = argv[2];
+        qvar = argv[2];
     if (argc > 3)
-        process = argv[3];
+        reaction = argv[3];
     if (argc > 4)
-        ssth12 = (double)atof(argv[4]);
+        process = argv[4];
     if (argc > 5)
-        ssth13 = (double)atof(argv[5]);
+        ssth12 = (double)atof(argv[5]);
     if (argc > 6)
-        dmsq12 = (double)atof(argv[6]);
+        ssth13 = (double)atof(argv[6]);
     if (argc > 7)
-        qvar = argv[7];
+        dmsq12 = (double)atof(argv[7]);
     // if (argc > 8)
     //     exposure = (double)atof(argv[8]);
 
@@ -462,7 +588,7 @@ int main(int argc, char *argv[])
         std::cerr << "Error: " << "E->" + qvar << " Smearing matrix not found in file." << std::endl;
         return 1;
     }
-    smear->Scale(1.0 / smear->Integral());
+    // smear->Scale(1.0 / smear->Integral());
     // ----------------------------------------------------------
 
     gSystem->Load("libThreeProb_3.10.a");
@@ -497,6 +623,12 @@ int main(int argc, char *argv[])
         FileName += "_" + reaction;
     }
 
+    TH2F *chi2 = histChi2(testHist, histograms[2]);
+
+    if (chi2)
+    {
+        histograms.push_back(chi2);
+    }
     saveResults(FileName, histograms);
 
     if (smearFile != nullptr)
