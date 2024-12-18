@@ -26,7 +26,7 @@ double dmsq12 = 7.4e-5;
 double exposure = 6e5;
 TString reaction = "";
 TString process = "";
-TString qvar = "E";
+TString qvar = "Ecal";
 
 int NBinsEnergy = 0;
 int NBinsNadir = 0;
@@ -122,7 +122,7 @@ TH2F *applySmearingMatrix(TH2F *inputHistogram, TH2F *smearingMatrix)
                 int smearingBin = smearingMatrix->GetXaxis()->FindBin(inputBinCenter);
                 if (smearingBin < 1 || smearingBin > smearingMatrix->GetNbinsX())
                     continue; // Skip if the bin is out of bounds
-                if (smearingMatrix->GetXaxis()->GetBinCenter(smearingBin) < 0)
+                if (smearingMatrix->GetYaxis()->GetBinCenter(xPrimeBin) < 0)
                     continue;
 
                 double smearingFactor = smearingMatrix->GetBinContent(smearingBin, xPrimeBin); // Note the transposed access
@@ -313,30 +313,7 @@ double ChiSquared(const double *params)
 
     TH2F *resultHist = histChi2(testHist, modelHist);
     double chi2 = resultHist->Integral();
-
-    // double chi2 = 0.0;
-    // for (int i = 1; i <= testHist->GetNbinsX(); i++)
-    // {
-    //     for (int j = 1; j <= testHist->GetNbinsY(); j++)
-    //     {
-    //         double observed = testHist->GetBinContent(i, j);
-    //         double expected = modelHist->GetBinContent(i, j);
-
-    //         // Replace NaN values with 0
-    //         if (std::isnan(observed))
-    //         {
-    //             observed = 0.0;
-    //         }
-    //         if (std::isnan(expected))
-    //         {
-    //             expected = 0.0;
-    //         }
-    //         if (expected > 0)
-    //         {
-    //             chi2 += pow(observed - expected, 2) / expected;
-    //         }
-    //     }
-    // }
+    // std::cout << "theta12: " << theta12 << " theta13: " << theta13 << " m2: " << m2 << " Chi2: " << chi2 << std::endl;
     return chi2;
 }
 
@@ -347,10 +324,12 @@ std::vector<double> minimize()
 
     // Set up minimizer
     std::unique_ptr<ROOT::Math::Minimizer> Minimizer(
-        ROOT::Math::Factory::CreateMinimizer("Minuit2", "Minimize"));
+        ROOT::Math::Factory::CreateMinimizer("Minuit2", "Migrad"));
 
     Minimizer->SetMaxFunctionCalls(1e9);
-    Minimizer->SetTolerance(1e-4);
+    Minimizer->SetMaxIterations(1e9);
+    Minimizer->SetTolerance(1e-6);
+    Minimizer->SetPrecision(1e-6);
     Minimizer->SetFunction(Func);
 
     // Initial values and limits
