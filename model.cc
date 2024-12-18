@@ -10,6 +10,7 @@
 #include "TH1F.h"
 #include "TGraph.h"
 #include "TSystem.h"
+#include "TMath.h"
 #include "Math/Functor.h"
 #include "Math/Minimizer.h"
 #include "Math/Factory.h"
@@ -255,7 +256,7 @@ TH2F *histChi2(TH2F *hist1, TH2F *hist2)
     double yStep = (yMax - yMin) / nBinsY;
 
     // Create a new histogram with the common binning
-    TH2F *result = new TH2F("Minimum chi2", "Chi2", nBinsX, xMin, xMax, nBinsY, yMin, yMax);
+    TH2F *result = new TH2F("chi2", "Chi2", nBinsX, xMin, xMax, nBinsY, yMin, yMax);
 
     // Subtract the bin contents of the two histograms
     for (int i = 1; i <= nBinsX; ++i)
@@ -317,19 +318,101 @@ double ChiSquared(const double *params)
     return chi2;
 }
 
+TH2F *histLogLikelihood(TH2F *hist1, TH2F *hist2)
+{
+    // Determine the common binning range and step size
+    double xMin = std::min(hist1->GetXaxis()->GetXmin(), hist2->GetXaxis()->GetXmin());
+    double xMax = std::max(hist1->GetXaxis()->GetXmax(), hist2->GetXaxis()->GetXmax());
+    double yMin = std::min(hist1->GetYaxis()->GetXmin(), hist2->GetYaxis()->GetXmin());
+    double yMax = std::max(hist1->GetYaxis()->GetXmax(), hist2->GetYaxis()->GetXmax());
+
+    int nBinsX = max(hist1->GetNbinsX(), hist2->GetNbinsX());
+    int nBinsY = max(hist1->GetNbinsY(), hist2->GetNbinsY());
+
+    double xStep = (xMax - xMin) / nBinsX;
+    double yStep = (yMax - yMin) / nBinsY;
+
+    // Create a new histogram with the common binning
+    TH2F *result = new TH2F("log-likelihood", "-ln(L)", nBinsX, xMin, xMax, nBinsY, yMin, yMax);
+
+    // Subtract the bin contents of the two histograms
+    for (int i = 1; i <= nBinsX; ++i)
+    {
+        for (int j = 1; j <= nBinsY; ++j)
+        {
+            double xCenter = xMin + (i - 0.5) * xStep;
+            double yCenter = yMin + (j - 0.5) * yStep;
+
+            int bin1 = hist1->FindBin(xCenter, yCenter);
+            int bin2 = hist2->FindBin(xCenter, yCenter);
+
+            double observed = (hist1->GetXaxis()->GetBinLowEdge(i) >= hist1->GetXaxis()->GetXmin() &&
+                               hist1->GetXaxis()->GetBinUpEdge(i) <= hist1->GetXaxis()->GetXmax() &&
+                               hist1->GetYaxis()->GetBinLowEdge(j) >= hist1->GetYaxis()->GetXmin() &&
+                               hist1->GetYaxis()->GetBinUpEdge(j) <= hist1->GetYaxis()->GetXmax())
+                                  ? hist1->GetBinContent(bin1)
+                                  : 0.0;
+
+            double expected = (hist2->GetXaxis()->GetBinLowEdge(i) >= hist2->GetXaxis()->GetXmin() &&
+                               hist2->GetXaxis()->GetBinUpEdge(i) <= hist2->GetXaxis()->GetXmax() &&
+                               hist2->GetYaxis()->GetBinLowEdge(j) >= hist2->GetYaxis()->GetXmin() &&
+                               hist2->GetYaxis()->GetBinUpEdge(j) <= hist2->GetYaxis()->GetXmax())
+                                  ? hist2->GetBinContent(bin2)
+                                  : 0.0;
+
+            double logL = 0.0;
+            if (expected > 0)
+            {
+                logL = -observed * log(expected) + expected; // Poisson likelihood
+            }
+            else if (observed > 0)
+            {
+                logL = std::numeric_limits<double>::infinity(); // Handle invalid cases
+            }
+            // std::cout << likelihood << std::endl;
+            result->SetBinContent(i, j, logL);
+        }
+    }
+
+    return result;
+}
+
+double logLikelihood(const double *params)
+{
+    double theta12 = params[0];
+    double theta13 = params[1];
+    double m2 = params[2];
+
+    // std::cout << "Theta12: " << theta12 << std::endl;
+    // std::cout << "Theta13: " << theta13 << std::endl;
+    // std::cout << "m2: " << m2 << std::endl;
+
+    extern TH2F *testHist;
+
+    std::vector<TH2F *> histograms = calculateSurvivalHistograms(theta12, theta13, m2);
+    TH2F *modelHist = histograms[2];
+
+    TH2F *resultHist = histLogLikelihood(testHist, modelHist);
+    double l = resultHist->Integral();
+    std::cout << "theta12: " << theta12 << " theta13: " << theta13 << " m2: " << m2 << " L: " << l << std::endl;
+
+    return l;
+}
+
 std::vector<double> minimize()
 {
     // Define Functor
-    ROOT::Math::Functor Func(ChiSquared, 3);
+    ROOT::Math::Functor Func(logLikelihood, 3);
 
     // Set up minimizer
     std::unique_ptr<ROOT::Math::Minimizer> Minimizer(
-        ROOT::Math::Factory::CreateMinimizer("Minuit2", "Migrad"));
+        ROOT::Math::Factory::CreateMinimizer("Minuit2", "Minimize"));
 
-    Minimizer->SetMaxFunctionCalls(1e9);
-    Minimizer->SetMaxIterations(1e9);
-    Minimizer->SetTolerance(1e-6);
-    Minimizer->SetPrecision(1e-6);
+    Minimizer->SetMaxFunctionCalls(1e6);
+    Minimizer->SetMaxIterations(1e6);
+    Minimizer->SetTolerance(1e-4);
+    Minimizer->SetPrecision(1e-4);
+    Minimizer->SetPrintLevel(1);
     Minimizer->SetFunction(Func);
 
     // Initial values and limits
@@ -358,9 +441,10 @@ std::vector<double> minimize()
     double theta12_opt = Minimizer->X()[0];
     double theta13_opt = Minimizer->X()[1];
     double m2_opt = Minimizer->X()[2];
-    double minChi2 = Minimizer->MinValue();
+    // double minChi2 = Minimizer->MinValue();
+    double maxLikelihood = -Minimizer->MinValue();
 
-    Minimizer->PrintResults();
+    // Minimizer->PrintResults();
 
     // std::cout << "\nOptimized Theta12: " << theta12_opt << std::endl;
     // std::cout << "Optimized Theta13: " << theta13_opt << std::endl;
@@ -429,7 +513,8 @@ std::vector<double> minimize()
     // Close the ROOT file
     rootFile->Close();
 
-    return {theta12_opt, theta13_opt, m2_opt, minChi2};
+    return {theta12_opt, theta13_opt, m2_opt, maxLikelihood};
+    //  return {theta12_opt, theta13_opt, m2_opt, minChi2};
 }
 
 int main(int argc, char *argv[])
@@ -471,8 +556,8 @@ int main(int argc, char *argv[])
     NBinsEnergy = testHist->GetNbinsX();
     NBinsNadir = testHist->GetNbinsY();
 
-    std::cout << "Nadir bins: " << NBinsNadir << std::endl;
-    std::cout << "Energy bins: " << NBinsEnergy << std::endl;
+    // std::cout << "Nadir bins: " << NBinsNadir << std::endl;
+    // std::cout << "Energy bins: " << NBinsEnergy << std::endl;
 
     // Allocate memory for the arrays
     EnergyEdge = new double[NBinsEnergy + 1];
@@ -492,8 +577,8 @@ int main(int argc, char *argv[])
         // std::cout << NadirEdge[i] << std::endl;
     }
 
-    std::cout << "Energy Edge: " << EnergyEdge[0] << " - " << EnergyEdge[NBinsEnergy] << std::endl;
-    std::cout << "Nadir Edge: " << NadirEdge[0] << " - " << NadirEdge[NBinsNadir] << std::endl;
+    // std::cout << "Energy Edge: " << EnergyEdge[0] << " - " << EnergyEdge[NBinsEnergy] << std::endl;
+    // std::cout << "Nadir Edge: " << NadirEdge[0] << " - " << NadirEdge[NBinsNadir] << std::endl;
 
     // ----------------------------------------------------------
 
@@ -603,10 +688,15 @@ int main(int argc, char *argv[])
     }
 
     TH2F *chi2 = histChi2(testHist, histograms[2]);
+    TH2F *likelihood = histLogLikelihood(testHist, histograms[2]);
 
     if (chi2)
     {
         histograms.push_back(chi2);
+    }
+    if (likelihood)
+    {
+        histograms.push_back(likelihood);
     }
     saveResults(FileName, histograms);
 
