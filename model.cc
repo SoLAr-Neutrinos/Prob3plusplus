@@ -379,9 +379,9 @@ TH2F *histLogLikelihood(TH2F *hist1, TH2F *hist2)
 
 double logLikelihood(const double *params)
 {
-    double theta12 = params[0];
-    double theta13 = params[1];
-    double m2 = params[2];
+    double theta12 = (params[0]);
+    double theta13 = (params[1]);
+    double m2 = (params[2]);
 
     // std::cout << "Theta12: " << theta12 << std::endl;
     // std::cout << "Theta13: " << theta13 << std::endl;
@@ -394,7 +394,7 @@ double logLikelihood(const double *params)
 
     TH2F *resultHist = histLogLikelihood(testHist, modelHist);
     double l = resultHist->Integral();
-    std::cout << "theta12: " << theta12 << " theta13: " << theta13 << " m2: " << m2 << " L: " << l << std::endl;
+    // std::cout << "theta12: " << theta12 << " theta13: " << theta13 << " m2: " << m2 << " L: " << l << std::endl;
 
     return l;
 }
@@ -406,22 +406,23 @@ std::vector<double> minimize()
 
     // Set up minimizer
     std::unique_ptr<ROOT::Math::Minimizer> Minimizer(
-        ROOT::Math::Factory::CreateMinimizer("Minuit2", "Minimize"));
+        ROOT::Math::Factory::CreateMinimizer("Minuit", "Simplex"));
 
-    Minimizer->SetMaxFunctionCalls(1e6);
-    Minimizer->SetMaxIterations(1e6);
+    Minimizer->SetMaxFunctionCalls(1e9);
+    Minimizer->SetMaxIterations(1e9);
     Minimizer->SetTolerance(1e-4);
-    Minimizer->SetPrecision(1e-4);
+    Minimizer->SetPrecision(1e-9);
     Minimizer->SetPrintLevel(1);
+    Minimizer->SetStrategy(2);
     Minimizer->SetFunction(Func);
 
     // Initial values and limits
-    Minimizer->SetVariable(0, "Theta12", ssth12, 0.001);
-    Minimizer->SetVariable(1, "Theta13", ssth13, 0.001);
-    Minimizer->SetVariable(2, "m2", dmsq12, 1e-7);
-    Minimizer->SetVariableLimits(0, 0, 1);
-    Minimizer->SetVariableLimits(1, 0, 1);
-    Minimizer->SetVariableLimits(2, 3.5e-5, 9.5e-5);
+    Minimizer->SetVariable(0, "Theta12", (ssth12), 1e-3);
+    Minimizer->SetVariable(1, "Theta13", (ssth13), 1e-3);
+    Minimizer->SetVariable(2, "m2", (dmsq12), 1e-6);
+    Minimizer->SetVariableLimits(0, (0.001), (1));
+    Minimizer->SetVariableLimits(1, (0.001), (1));
+    Minimizer->SetVariableLimits(2, (3.5e-5), (9.5e-5));
 
     // Perform minimization
     Minimizer->Minimize();
@@ -438,9 +439,9 @@ std::vector<double> minimize()
     // }
 
     // Retrieve results
-    double theta12_opt = Minimizer->X()[0];
-    double theta13_opt = Minimizer->X()[1];
-    double m2_opt = Minimizer->X()[2];
+    double theta12_opt = (Minimizer->X()[0]);
+    double theta13_opt = (Minimizer->X()[1]);
+    double m2_opt = (Minimizer->X()[2]);
     // double minChi2 = Minimizer->MinValue();
     double maxLikelihood = -Minimizer->MinValue();
 
@@ -472,43 +473,43 @@ std::vector<double> minimize()
     covMatrixHist->Write();
     corrMatrixHist->Write();
 
-    // // Generate contour plots
-    // unsigned int npointsTheta12Theta13 = 40;
-    // unsigned int npointsTheta12M2 = 40;
-    // unsigned int npointsTheta13M2 = 40;
+    // Generate contour plots
+    unsigned int npointsTheta12Theta13 = 40;
+    unsigned int npointsTheta12M2 = 40;
+    unsigned int npointsTheta13M2 = 40;
 
-    // // Contour for Theta12 and Theta13
-    // std::cout << "Contour for Theta12 and Theta13" << std::endl;
-    // std::vector<double> xiTheta12Theta13(npointsTheta12Theta13), xjTheta12Theta13(npointsTheta12Theta13);
-    // if (Minimizer->Contour(0, 1, npointsTheta12Theta13, xiTheta12Theta13.data(), xjTheta12Theta13.data()))
-    // {
-    //     auto graph = new TGraph(npointsTheta12Theta13, xiTheta12Theta13.data(), xjTheta12Theta13.data());
-    //     graph->SetName("Contour_Theta12_Theta13");
-    //     graph->SetTitle("Contour Plot: Theta12 vs Theta13;Theta12;Theta13");
-    //     graph->Write();
-    // }
+    // Contour for Theta12 and Theta13
+    std::cout << "Contour for Theta12 and Theta13" << std::endl;
+    std::vector<double> xiTheta12Theta13(npointsTheta12Theta13), xjTheta12Theta13(npointsTheta12Theta13);
+    if (Minimizer->Contour(0, 1, npointsTheta12Theta13, xiTheta12Theta13.data(), xjTheta12Theta13.data()))
+    {
+        auto graph = new TGraph(npointsTheta12Theta13, xiTheta12Theta13.data(), xjTheta12Theta13.data());
+        graph->SetName("Contour_Theta12_Theta13");
+        graph->SetTitle("Contour Plot: Theta12 vs Theta13;Theta12;Theta13");
+        graph->Write();
+    }
 
-    // // Contour for Theta12 and m2
-    // // std::cout << "Contour for Theta12 and m2" << std::endl;
-    // std::vector<double> xiTheta12M2(npointsTheta12M2), xjTheta12M2(npointsTheta12M2);
-    // if (Minimizer->Contour(0, 2, npointsTheta12M2, xiTheta12M2.data(), xjTheta12M2.data()))
-    // {
-    //     auto graph = new TGraph(npointsTheta12M2, xiTheta12M2.data(), xjTheta12M2.data());
-    //     graph->SetName("Contour_Theta12_m2");
-    //     graph->SetTitle("Contour Plot: Theta12 vs m2;Theta12;m2");
-    //     graph->Write();
-    // }
+    // Contour for Theta12 and m2
+    // std::cout << "Contour for Theta12 and m2" << std::endl;
+    std::vector<double> xiTheta12M2(npointsTheta12M2), xjTheta12M2(npointsTheta12M2);
+    if (Minimizer->Contour(0, 2, npointsTheta12M2, xiTheta12M2.data(), xjTheta12M2.data()))
+    {
+        auto graph = new TGraph(npointsTheta12M2, xiTheta12M2.data(), xjTheta12M2.data());
+        graph->SetName("Contour_Theta12_m2");
+        graph->SetTitle("Contour Plot: Theta12 vs m2;Theta12;m2");
+        graph->Write();
+    }
 
-    // // Contour for Theta13 and m2
-    // // std::cout << "Contour for Theta13 and m2" << std::endl;
-    // std::vector<double> xiTheta13M2(npointsTheta13M2), xjTheta13M2(npointsTheta13M2);
-    // if (Minimizer->Contour(1, 2, npointsTheta13M2, xiTheta13M2.data(), xjTheta13M2.data()))
-    // {
-    //     auto graph = new TGraph(npointsTheta13M2, xiTheta13M2.data(), xjTheta13M2.data());
-    //     graph->SetName("Contour_Theta13_m2");
-    //     graph->SetTitle("Contour Plot: Theta13 vs m2;Theta13;m2");
-    //     graph->Write();
-    // }
+    // Contour for Theta13 and m2
+    // std::cout << "Contour for Theta13 and m2" << std::endl;
+    std::vector<double> xiTheta13M2(npointsTheta13M2), xjTheta13M2(npointsTheta13M2);
+    if (Minimizer->Contour(1, 2, npointsTheta13M2, xiTheta13M2.data(), xjTheta13M2.data()))
+    {
+        auto graph = new TGraph(npointsTheta13M2, xiTheta13M2.data(), xjTheta13M2.data());
+        graph->SetName("Contour_Theta13_m2");
+        graph->SetTitle("Contour Plot: Theta13 vs m2;Theta13;m2");
+        graph->Write();
+    }
 
     // Close the ROOT file
     rootFile->Close();
