@@ -5,6 +5,7 @@
 #include "BargerPropagator.h"
 
 #include <vector>
+#include <set>
 #include "TFile.h"
 #include "TH2D.h"
 #include "TH1F.h"
@@ -28,6 +29,7 @@ double exposure = 6e5;
 TString reaction = "";
 TString process = "";
 TString qvar = "Ecal";
+TString inputName = "";
 
 int NBinsEnergy = 0;
 int NBinsNadir = 0;
@@ -399,123 +401,133 @@ double logLikelihood(const double *params)
     return l;
 }
 
-std::vector<double> minimize()
+std::vector<std::vector<double>> minimize()
 {
-    // Define Functor
-    ROOT::Math::Functor Func(logLikelihood, 3);
 
-    // Set up minimizer
-    std::unique_ptr<ROOT::Math::Minimizer> Minimizer(
-        ROOT::Math::Factory::CreateMinimizer("Minuit", "Simplex"));
+    TString fileName = "models/" + getBaseFileName(inputName) + "_" + qvar + "_minimizer_plots.root";
+    TFile *rootFile = new TFile(fileName, "RECREATE");
 
-    Minimizer->SetMaxFunctionCalls(1e9);
-    Minimizer->SetMaxIterations(1e9);
-    Minimizer->SetTolerance(1e-4);
-    Minimizer->SetPrecision(1e-9);
-    Minimizer->SetPrintLevel(1);
-    Minimizer->SetStrategy(2);
-    Minimizer->SetFunction(Func);
-
-    // Initial values and limits
-    Minimizer->SetVariable(0, "Theta12", (ssth12), 1e-3);
-    Minimizer->SetVariable(1, "Theta13", (ssth13), 1e-3);
-    Minimizer->SetVariable(2, "m2", (dmsq12), 1e-6);
-    Minimizer->SetVariableLimits(0, (0.001), (1));
-    Minimizer->SetVariableLimits(1, (0.001), (1));
-    Minimizer->SetVariableLimits(2, (3.5e-5), (9.5e-5));
-
-    // Perform minimization
-    Minimizer->Minimize();
-
-    // std::cout << Minimizer->CovMatrixStatus() << std::endl;
-
-    // for (int i = 0; i < 3; i++)
-    // {
-    //     for (int j = i; j < 3; j++)
-    //     {
-    //         std::cout << "Covariance (" << i << "," << j << ") = " << Minimizer->CovMatrix(i, j) << std::endl;
-    //         std::cout << "Correlation (" << i << "," << j << ") = " << Minimizer->Correlation(i, j) << std::endl;
-    //     }
-    // }
-
-    // Retrieve results
-    double theta12_opt = (Minimizer->X()[0]);
-    double theta13_opt = (Minimizer->X()[1]);
-    double m2_opt = (Minimizer->X()[2]);
-    // double minChi2 = Minimizer->MinValue();
-    double maxLikelihood = -Minimizer->MinValue();
-
-    // Minimizer->PrintResults();
-
-    // std::cout << "\nOptimized Theta12: " << theta12_opt << std::endl;
-    // std::cout << "Optimized Theta13: " << theta13_opt << std::endl;
-    // std::cout << "Optimized m2: " << m2_opt << std::endl;
-    // std::cout << "Minimum Chi-Squared: " << minChi2 << std::endl;
-
-    // Open a ROOT file to store contour plots
-    TFile *rootFile = new TFile("models/minimizer_plots.root", "RECREATE");
-
-    // Create TH2F histograms for covariance and correlation matrices
-    TH2F *covMatrixHist = new TH2F("CovarianceMatrix", "Covariance Matrix", 3, 0, 3, 3, 0, 3);
-    TH2F *corrMatrixHist = new TH2F("CorrelationMatrix", "Correlation Matrix", 3, 0, 3, 3, 0, 3);
-
-    // Fill the histograms with values from the minimizer
-    for (int i = 0; i < 3; i++)
+    // Helper lambda for minimization
+    auto performMinimization = [](bool fixParam0, bool fixParam1, bool fixParam2)
     {
-        for (int j = 0; j < 3; j++)
+        ROOT::Math::Functor Func(logLikelihood, 3);
+        std::unique_ptr<ROOT::Math::Minimizer> Minimizer(
+            ROOT::Math::Factory::CreateMinimizer("Minuit", "Simplex"));
+
+        Minimizer->SetMaxFunctionCalls(1e6);
+        Minimizer->SetMaxIterations(1e6);
+        Minimizer->SetTolerance(1e-5);
+        Minimizer->SetPrecision(1e-12);
+        Minimizer->SetPrintLevel(1);
+        Minimizer->SetStrategy(2);
+        Minimizer->SetFunction(Func);
+
+        // Set up fixed or variable parameters
+        if (fixParam0)
         {
-            covMatrixHist->SetBinContent(i + 1, j + 1, Minimizer->CovMatrix(i, j));
-            corrMatrixHist->SetBinContent(i + 1, j + 1, Minimizer->Correlation(i, j));
+            Minimizer->SetFixedVariable(0, "Theta12", ssth12);
         }
-    }
+        else
+        {
+            Minimizer->SetVariable(0, "Theta12", (ssth12), 1e-3);
+            Minimizer->SetVariableLimits(0, (0.001), (1));
+        }
 
-    // Write the histograms to the file
-    covMatrixHist->Write();
-    corrMatrixHist->Write();
+        if (fixParam1)
+        {
+            Minimizer->SetFixedVariable(1, "Theta13", ssth13);
+        }
+        else
+        {
+            Minimizer->SetVariable(1, "Theta13", (ssth13), 1e-3);
+            Minimizer->SetVariableLimits(1, (0.001), (1));
+        }
 
-    // Generate contour plots
-    unsigned int npointsTheta12Theta13 = 40;
-    unsigned int npointsTheta12M2 = 40;
-    unsigned int npointsTheta13M2 = 40;
+        if (fixParam2)
+        {
+            Minimizer->SetFixedVariable(2, "m2", dmsq12);
+        }
+        else
+        {
+            Minimizer->SetVariable(2, "m2", (dmsq12), 1e-6);
+            Minimizer->SetVariableLimits(2, (3.5e-5), (9.5e-5));
+        }
 
-    // Contour for Theta12 and Theta13
-    std::cout << "Contour for Theta12 and Theta13" << std::endl;
-    std::vector<double> xiTheta12Theta13(npointsTheta12Theta13), xjTheta12Theta13(npointsTheta12Theta13);
-    if (Minimizer->Contour(0, 1, npointsTheta12Theta13, xiTheta12Theta13.data(), xjTheta12Theta13.data()))
-    {
-        auto graph = new TGraph(npointsTheta12Theta13, xiTheta12Theta13.data(), xjTheta12Theta13.data());
-        graph->SetName("Contour_Theta12_Theta13");
-        graph->SetTitle("Contour Plot: Theta12 vs Theta13;Theta12;Theta13");
-        graph->Write();
-    }
+        Minimizer->Minimize();
 
-    // Contour for Theta12 and m2
-    // std::cout << "Contour for Theta12 and m2" << std::endl;
-    std::vector<double> xiTheta12M2(npointsTheta12M2), xjTheta12M2(npointsTheta12M2);
-    if (Minimizer->Contour(0, 2, npointsTheta12M2, xiTheta12M2.data(), xjTheta12M2.data()))
-    {
-        auto graph = new TGraph(npointsTheta12M2, xiTheta12M2.data(), xjTheta12M2.data());
-        graph->SetName("Contour_Theta12_m2");
-        graph->SetTitle("Contour Plot: Theta12 vs m2;Theta12;m2");
-        graph->Write();
-    }
+        // Retrieve optimized parameters
+        double theta12_opt = Minimizer->X()[0];
+        double theta13_opt = Minimizer->X()[1];
+        double m2_opt = Minimizer->X()[2];
+        double maxLikelihood = -Minimizer->MinValue();
 
-    // Contour for Theta13 and m2
-    // std::cout << "Contour for Theta13 and m2" << std::endl;
-    std::vector<double> xiTheta13M2(npointsTheta13M2), xjTheta13M2(npointsTheta13M2);
-    if (Minimizer->Contour(1, 2, npointsTheta13M2, xiTheta13M2.data(), xjTheta13M2.data()))
-    {
-        auto graph = new TGraph(npointsTheta13M2, xiTheta13M2.data(), xjTheta13M2.data());
-        graph->SetName("Contour_Theta13_m2");
-        graph->SetTitle("Contour Plot: Theta13 vs m2;Theta13;m2");
-        graph->Write();
-    }
+        // Print optimized parameters
+        std::cout << "\nOptimized Parameters:\n"
+                  << "Theta12: " << theta12_opt << "\n"
+                  << "Theta13: " << theta13_opt << "\n"
+                  << "m2: " << m2_opt << "\n"
+                  << "Max Likelihood: " << maxLikelihood << "\n\n";
 
-    // Close the ROOT file
+        // Create unique labels based on fixed parameters
+        std::string fixedLabel = "";
+        if (fixParam0)
+            fixedLabel += "_Theta12_fixed";
+        if (fixParam1)
+            fixedLabel += "_Theta13_fixed";
+        if (fixParam2)
+            fixedLabel += "_m2_fixed";
+
+        // Covariance and correlation matrices
+        std::string covMatrixName = "CovarianceMatrix" + fixedLabel;
+        std::string corrMatrixName = "CorrelationMatrix" + fixedLabel;
+        TH2F *covMatrixHist = new TH2F(covMatrixName.c_str(), (covMatrixName + ";Param1;Param2").c_str(), 3, 0, 3, 3, 0, 3);
+        TH2F *corrMatrixHist = new TH2F(corrMatrixName.c_str(), (corrMatrixName + ";Param1;Param2").c_str(), 3, 0, 3, 3, 0, 3);
+
+        for (int i = 0; i < 3; i++)
+        {
+            for (int j = 0; j < 3; j++)
+            {
+                covMatrixHist->SetBinContent(i + 1, j + 1, Minimizer->CovMatrix(i, j));
+                corrMatrixHist->SetBinContent(i + 1, j + 1, Minimizer->Correlation(i, j));
+            }
+        }
+
+        covMatrixHist->Write();
+        corrMatrixHist->Write();
+
+        // Contour plots
+        auto generateContour = [&](int var1, int var2, const char *var1Name, const char *var2Name)
+        {
+            unsigned int npoints = 40;
+            std::vector<double> xi(npoints), xj(npoints);
+            if (Minimizer->Contour(var1, var2, npoints, xi.data(), xj.data()))
+            {
+                std::string contourName = "Contour_" + std::string(var1Name) + "_" + std::string(var2Name) + fixedLabel;
+                std::string contourTitle = "Contour: " + std::string(var1Name) + " vs " + std::string(var2Name) + ";" + std::string(var1Name) + ";" + std::string(var2Name);
+                auto graph = new TGraph(npoints, xi.data(), xj.data());
+                graph->SetName(contourName.c_str());
+                graph->SetTitle(contourTitle.c_str());
+                graph->Write();
+            }
+        };
+
+        generateContour(0, 1, "Theta12", "Theta13");
+        generateContour(0, 2, "Theta12", "m2");
+        generateContour(1, 2, "Theta13", "m2");
+
+        return std::vector<double>{theta12_opt, theta13_opt, m2_opt, maxLikelihood};
+    };
+
+    // Perform four minimizations
+    std::vector<std::vector<double>> results;
+    results.push_back(performMinimization(false, false, false));
+    results.push_back(performMinimization(true, false, false));
+    results.push_back(performMinimization(false, true, false));
+    results.push_back(performMinimization(false, false, true));
+
     rootFile->Close();
 
-    return {theta12_opt, theta13_opt, m2_opt, maxLikelihood};
-    //  return {theta12_opt, theta13_opt, m2_opt, minChi2};
+    return results;
 }
 
 int main(int argc, char *argv[])
@@ -536,7 +548,7 @@ int main(int argc, char *argv[])
     //     exposure = (double)atof(argv[8]);
 
     // Open test histogram file
-    const char *inputName = argv[1];
+    inputName = argv[1];
     TFile *inputFile = TFile::Open(inputName);
     if (!inputFile || inputFile->IsZombie())
     {
@@ -661,45 +673,71 @@ int main(int argc, char *argv[])
 
     std::cout << "\nStarting minimization..." << std::endl;
 
-    std::vector<double> optimum = minimize();
-    ssth12 = optimum[0];
-    ssth13 = optimum[1];
-    dmsq12 = optimum[2];
+    // Obtain all optima
+    std::vector<std::vector<double>> allOptima = minimize();
 
-    std::cout << "\nUsing:" << "\n"
-              << "\tdm2:\t " << dmsq12 << "\n"
-              << "\tTheta13: " << ssth13 << "\n"
-              << "\tTheta12: " << ssth12 << "\n"
-              << "\tTheta23: " << Theta23 << "\n"
-              << "\tDM2:\t " << DM2 << "\n"
-              << "\tdelta:   " << delta << "\n"
-              << "\tknubar:  " << kNuBar << "\n";
+    // Set to track processed optima
+    std::set<std::string> processedOptima;
 
-    std::vector<TH2F *> histograms = calculateSurvivalHistograms(ssth12, ssth13, dmsq12);
-
-    // Save the name of the file in a string with dm2 and sin12 as floats in scientific notation
-    TString FileName = "./models/" + getBaseFileName(inputName) + "_" + qvar + "_dm2_" + TString::Format("%.3e", dmsq12) + "_sin13_" + TString::Format("%.3e", ssth13) + "_sin12_" + TString::Format("%.3e", ssth12);
-    if (process != "")
+    // Loop over all optima
+    for (const auto &optimum : allOptima)
     {
-        FileName += "_" + process;
-    }
-    if (reaction != "")
-    {
-        FileName += "_" + reaction;
-    }
+        // Generate a unique key for the current optimum
+        std::string key = std::to_string(optimum[0]) + "_" + std::to_string(optimum[1]) + "_" + std::to_string(optimum[2]);
 
-    TH2F *chi2 = histChi2(testHist, histograms[2]);
-    TH2F *likelihood = histLogLikelihood(testHist, histograms[2]);
+        // Check if this optimum has already been processed
+        if (processedOptima.find(key) != processedOptima.end())
+        {
+            continue; // Skip if already processed
+        }
 
-    if (chi2)
-    {
-        histograms.push_back(chi2);
+        // Mark this optimum as processed
+        processedOptima.insert(key);
+
+        // Extract parameters
+        double ssth12 = optimum[0];
+        double ssth13 = optimum[1];
+        double dmsq12 = optimum[2];
+        double likelihood = optimum[3];
+
+        // Log the parameters
+        std::cout << "\nUsing:" << "\n"
+                  << "\tdm2:\t " << dmsq12 << "\n"
+                  << "\tTheta13: " << ssth13 << "\n"
+                  << "\tTheta12: " << ssth12 << "\n"
+                  << "\tLog-likelihood: " << likelihood << "\n\n";
+
+        // Perform calculations based on the optimum
+        std::vector<TH2F *> histograms = calculateSurvivalHistograms(ssth12, ssth13, dmsq12);
+
+        TH2F *chi2Hist = histChi2(testHist, histograms[2]);
+        TH2F *likelihoodHist = histLogLikelihood(testHist, histograms[2]);
+
+        likelihoodHist->Scale(-1); // Convert to ln(L)
+
+        if (chi2Hist)
+        {
+            histograms.push_back(chi2Hist);
+        }
+        if (likelihoodHist)
+        {
+            histograms.push_back(likelihoodHist);
+        }
+
+        // Save the name of the file with parameters in scientific notation
+        TString FileName = "./models/" + getBaseFileName(inputName) + "_" + qvar + "_dm2_" + TString::Format("%.3e", dmsq12) + "_sin13_" + TString::Format("%.3e", ssth13) + "_sin12_" + TString::Format("%.3e", ssth12);
+        if (process != "")
+        {
+            FileName += "_" + process;
+        }
+        if (reaction != "")
+        {
+            FileName += "_" + reaction;
+        }
+
+        // Save the results
+        saveResults(FileName, histograms);
     }
-    if (likelihood)
-    {
-        histograms.push_back(likelihood);
-    }
-    saveResults(FileName, histograms);
 
     if (smearFile != nullptr)
         smearFile->Close();
