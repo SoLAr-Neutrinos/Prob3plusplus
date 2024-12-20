@@ -78,11 +78,19 @@ class BargerPropagator : public NeutrinoPropagator
       
       
       // miscellaneuos
-      double GetPathLength()            {return Earth->get_Pathlength();}
-      void SetPathLength( double x )    { PathLength = x;}
-      void SetEnergy    ( double x )    { Energy     = x;}   
+      double GetPathLength() {return Earth->get_Pathlength();}
+      void SetPathLength( double x ) { PathLength = x;}
+      virtual void SetEnergy( double x ) { Energy     = x;}   
       virtual void SetMatterPathLength();
       virtual void SetAirPathLength(double);
+      virtual double GetSinSqTheta12Sun(); 
+      virtual double GetSinSqTheta12() { double out = fx12; if (!fSquared) return out*fx12; else return out; }
+      virtual double GetSinSqTheta13() { double out = fx13; if (!fSquared) return out*fx13; else return out; }
+      virtual double GetSinSqTheta23() { double out = fx23; if (!fSquared) return out*fx23; else return out; }
+      virtual double GetDeltaMSq21()   { return fm21; }
+      virtual double GetDeltaMSq32()   { return fmAtm; }
+
+      virtual double GetDeltaCP() {return fdelta;}
       
       
       // Specify weather oscillition probabilities are computed from neutrino mass eigenstates

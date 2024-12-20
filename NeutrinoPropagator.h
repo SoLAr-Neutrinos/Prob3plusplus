@@ -21,6 +21,9 @@ class NeutrinoPropagator
      virtual void SetMNS( double , double , double , double , double , double , double, bool, int kNuType = 1 )
                { cerr<< " Warning NeutrinoPropagator::SetMNS(double,..., int ) undefined " << endl; }
 
+     virtual void SetEnergy( double )
+               { cerr<< " Warning NeutrinoPropagator::SetEnergy(double) undefined " << endl; }
+
      virtual double GetProb( int , int )
                { cerr<< " Warning NeutrinoPropagator::GetProb(int, int) undefined " << endl; return 0.0; }
                
@@ -32,6 +35,21 @@ class NeutrinoPropagator
 
      virtual double GetPathLength() 
                { cerr<< " Warning NeutrinoPropagator::GetPathLength( ) undefined " << endl; return 0.0; }
+
+     virtual double GetSinSqTheta12() {
+       cerr<< " Warning NeutrinoPropagator::GetSinSqTheta12( ) undefined " << endl; return 0.0; }
+     virtual double GetSinSqTheta13() {
+       cerr<< " Warning NeutrinoPropagator::GetSinSqTheta13( ) undefined " << endl; return 0.0; }
+     virtual double GetSinSqTheta23() {
+       cerr<< " Warning NeutrinoPropagator::GetSinSqTheta23( ) undefined " << endl; return 0.0; }
+     virtual double GetDeltaMSq21() {
+       cerr<< " Warning NeutrinoPropagator::GetDeltaMSq21( ) undefined " << endl; return 0.0; }
+     virtual double GetDeltaMSq32() {
+       cerr<< " Warning NeutrinoPropagator::GetDeltaMSq32( ) undefined " << endl; return 0.0; }
+     virtual double GetDeltaCP() {
+       cerr<< " Warning NeutrinoPropagator::GetDeltaCP( ) undefined " << endl; return 0.0; }
+     virtual double GetSinSqTheta12Sun() {
+       cerr<< " Warning NeutrinoPropagator::GetSinSqTheta12Sun( ) undefined " << endl; return 0.0; }
 
      int WhoAmI(){ return IAm; }
 

@@ -243,7 +243,6 @@ void BargerPropagator::SetMNS( double x12, double x13, double x23,
    init_mixing_matrix( m21, lm32, sin12, sin23, sin13, delta );
 
 }
-
 void BargerPropagator::DefinePath(double cz, double ProdHeight, bool kSetProfile )
 {
 
@@ -280,6 +279,26 @@ void BargerPropagator::SetAirPathLength(double x)
 }
 
 
+double BargerPropagator::GetSinSqTheta12Sun() 
+{
+  double ssth13 = fx13; 
+  double ssth12_vac = fx12;
+  double dmsq_vac = fm21;
+
+  if ( !fSquared ) {
+    ssth13 = fx13 * fx13;
+    ssth12_vac = fx12 * fx12;
+  }
+
+  // TODO::Check if this number makes sense for the solar core
+  double rhoY = 0.090; // rho density of production in kg/cm^3, Y = N(e)/N(n+p)
+  double A = 1.53e-4 * rhoY * Energy * 1e3;
+  A *= (1 - ssth13);
+  double th12 = asin(sqrt(ssth12_vac));
+  double s2th_vac = sin(2 * th12);
+  double ret = 0.5 * (1 + (A - dmsq_vac * sqrt(1 - s2th_vac * s2th_vac)) / sqrt(pow(dmsq_vac * sqrt(1 - s2th_vac * s2th_vac) - A, 2.) + pow(dmsq_vac * s2th_vac, 2.)));
+  return ret;
+}
 
 double BargerPropagator::GetVacuumProb( int Alpha, int Beta , double Energy, double Path )
 {
