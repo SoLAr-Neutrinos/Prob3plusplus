@@ -33,7 +33,8 @@ int main(int argc, char *argv[])
   if (argc >= 3)
     dmsq12 = (double)atof(argv[3]);
 
-  gSystem->Load("libThreeProb_3.10.a");
+  //gSystem->Load("libThreeProb_3.10.a");
+  gSystem->Load("install/lib/libProb3plusplus.so");
   TH1::AddDirectory(0);
 
   int NBinsEnergy = 300;
@@ -91,7 +92,8 @@ int main(int argc, char *argv[])
                            NBinsEnergy, EnergyEdge, NBinsNadir, NadirEdge);
   TH2D *hsurv_3 = new TH2D("hsurv_3", "P_{#nu_{2}#rightarrow#nu_{e}}",
                            NBinsEnergy, EnergyEdge, NBinsNadir, NadirEdge);
-
+  myNu->SetMNS(Theta12, Theta13, Theta23, dm2, DM2, delta,
+      1.0, kSquared, kNuBar);
   for (int i = 1; i <= hsurv->GetNbinsX(); i++)
   {
     double E = hsurv->GetXaxis()->GetBinCenter(i);
@@ -99,10 +101,11 @@ int main(int argc, char *argv[])
     {
       double n = hsurv->GetYaxis()->GetBinCenter(j);
 
-      myNu->SetMNS(Theta12, Theta13, Theta23, dm2, DM2, delta,
-                   E, kSquared, kNuBar);
+      //myNu->SetMNS(Theta12, Theta13, Theta23, dm2, DM2, delta,
+                   //E, kSquared, kNuBar);
+      myNu->SetEnergy( E ); 
 
-      myNu->DefinePath(n, 25.00);
+      myNu->DefinePath(n, 1.47e8);
       myNu->propagate(1 * kNuBar);
 
       double surv_1 = myNu->GetProb(1, 1);
@@ -110,7 +113,8 @@ int main(int argc, char *argv[])
       double surv_3 = myNu->GetProb(3, 1);
 
       // double f_3 = pow(asin(sqrt(Theta13)),2.);
-      double f_2 = ssth(E * 1e3, dm2, Theta12, Theta13) * (1 - Theta13);
+      //double f_2 = ssth(E * 1e3, dm2, Theta12, Theta13) * (1 - Theta13);
+      double f_2 = myNu->GetSinSqTheta12Sun();
       double f_3 = Theta13;
       double surv = (1 - f_2 - f_3) * surv_1 + f_2 * surv_2 + f_3 * surv_3;
 
