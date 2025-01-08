@@ -60,7 +60,7 @@ class BargerPropagator : public NeutrinoPropagator
       //  The last argument is the neutrino type  nu > 0 : neutrinos  nu < 0 : antineutrinos
       //  The default is to define the MNS matrix for neutrino propagation
       //  This type must agree with the type used in the call to propagate() and propagateLinear()
-      virtual void SetMNS( double , double , double , double , double , double , double , bool, int kNuType = 1 );
+      virtual void SetMNS( double x12, double x13, double x23, double dm21, double dm32, double d_cp, double E, bool isSquared, int kNuType = 1 );
 
       virtual void ResetMNS( double , int nutype = 1 );
       
