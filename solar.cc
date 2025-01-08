@@ -81,7 +81,7 @@ int main(int argc, char *argv[])
   myNu = bNu;
 
   // Save the name of the file in a string with dm2 and sin12 as floats in scientific notation
-  TString FilePath = "./oscilograms/";
+  TString FilePath = "./oscillograms/";
   TString FileName = "osc_probability_dm2_" + TString::Format("%.3e", dm2) + "_sin13_" + TString::Format("%.3e", ssth13) + "_sin12_" + TString::Format("%.3e", ssth12);
 
   TH2D *hsurv = new TH2D("hsurv", "P_{#nu_{e}#rightarrow#nu_{e}}",
